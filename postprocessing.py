@@ -22,7 +22,12 @@ linestyle_list = [
     "solid",
     "dashed",
     "dotted",
-    "dashdot"
+    "dashdot",
+]
+marker_list = [
+    "x",
+    "+",
+    "o",
 ]
 
 def natural_sort(l):
@@ -30,9 +35,32 @@ def natural_sort(l):
     alphanum_key = lambda key: [convert(c) for c in re.split("([0-9]+)", key)]
     return sorted(l, key=alphanum_key)
 
+def plt_count(plt_dir):
+    """
+    Returns the number of plt files in `plt_dir`
+    """
+    plt_files = natural_sort(glob.glob(os.path.join(plt_dir, "plt*")))
+    return len(plt_files)
+
+def batch_plt_count(root_dir,case_dir,methods,grid_sizes,grid_prefix="nx_",**kwargs):
+    """
+    Returns a list with the number of plt files in for every method in
+    `methods` and every grid size in `grid_sizes`. The directories should be
+    organized as `root_dir`/method/`case_dir`/`grid_prefix`grid_size/plt...
+
+    """
+    plt_count_list = []
+    for method in methods:
+        plt_count_method = []
+        for grid_size in grid_sizes:
+            full_dir = os.path.join(root_dir,method,case_dir,f'{grid_prefix}{grid_size}')
+            plt_count_method.append(plt_count(full_dir))
+        plt_count_list.append(plt_count_method)
+    return plt_count_list
+
 def load_plt(plt_dir,i):
     """
-    Load the `i`-th plt file in `case_dir` into a yt dataset and return it.
+    Load the `i`-th plt file in `plt_dir` into a yt dataset and return it.
     """
     plt_files = natural_sort(glob.glob(os.path.join(plt_dir, "plt*")))
     ds = yt.load(plt_files[i])
@@ -53,8 +81,14 @@ def batch_load_plt(root_dir,case_dir,methods,grid_sizes,i,grid_prefix="nx_",**kw
 
 def load_error(filepath,skiplines=0,nvars=1,loadvars=[0],withglobal=True,**kwargs):
     """
-    Load the error file at `filepath` into a pandas dataframe. The first column of the file is assumed to be the time variable and the other columns are assumed to be organized first per level and then per variable the error is calculated for.
-    The number of vars `nvars` in the file has to be specified such that the number of levels can be calculated. Per level, only the colunns in `loadvars` are loaded. If there is a global error, it is assumed to be specified in the last columns, with one column per variable, and it only is loaded if `withglobal` is `True`.
+    Load the error file at `filepath` into a pandas dataframe. The first column
+    of the file is assumed to be the time variable and the other columns are
+    assumed to be organized first per level and then per variable the error is
+    calculated for. The number of vars `nvars` in the file has to be specified
+    such that the number of levels can be calculated. Per level, only the colunns
+    in `loadvars` are loaded. If there is a global error, it is assumed to be
+    specified in the last columns, with one column per variable, and it only is
+    loaded if `withglobal` is `True`.
     """
     with open(filepath) as f:
         lines = f.readlines()
@@ -109,7 +143,7 @@ def sample_ray(ds,ray_start,ray_end,variable="temperature",**kwargs):
     df["ray_coord"] = ((df["x"]-df["x"][0])**2 + (df["y"]-df["y"][0])**2 + (df["z"]-df["z"][0])**2)**0.5    
     return df
 
-def setup_batch_line_plot(ax,methods,grid_sizes,xlim,ylim,xlabel,ylabel,errorlines=False,maxlevel=0,withglobal=False,linestyles=linestyle_list,colors=color_list,linewidth=1,colormethods=True,label_grid_appendix=" cells",**kwargs):
+def setup_batch_line_plot(ax,methods,grid_sizes,xlim,ylim,xlabel,ylabel,errorlines=False,maxlevel=0,withglobal=False,ylogscale=False,linestyles=linestyle_list,colors=color_list,linewidth=1,colormethods=True,label_grid_appendix=" cells",**kwargs):
     """
 
     """
@@ -123,13 +157,16 @@ def setup_batch_line_plot(ax,methods,grid_sizes,xlim,ylim,xlabel,ylabel,errorlin
                 color = colors[i_grid_size]
                 linestyle = linestyles[i_method]
             if errorlines:
-                for level in range(maxlevel+1):
-                    label = f'{methods[i_method]}; {grid_sizes[i_grid_size]}{label_grid_appendix}; level {level}'
-                    line = ax.plot([], [], color=color, linewidth=linewidth, linestyle=linestyle, label=label)[0]
-                    lines.append(line)
+                if maxlevel >= 0:
+                    for level in range(maxlevel+1):
+                        label = f'{methods[i_method]}; {grid_sizes[i_grid_size]}{label_grid_appendix}; level {level}'
+                        line = ax.plot([], [], color=color, linewidth=linewidth,
+                                linestyle=linestyle, label=label,
+                                marker=marker_list[level], markevery=0.05)[0]
+                        lines.append(line)
                 if withglobal:
                     label = f'{methods[i_method]}; {grid_sizes[i_grid_size]}{label_grid_appendix}; global level'
-                    line = ax.plot([], [], color=color, linewidth=linewidth, linestyle=linestyle, label=label)[0]
+                    line = ax.plot([], [], color=color, linewidth=2*linewidth, linestyle=linestyle, label=label)[0]
                     lines.append(line)
             else:
                 label = f'{methods[i_method]}; {grid_sizes[i_grid_size]}{label_grid_appendix}'
@@ -137,6 +174,8 @@ def setup_batch_line_plot(ax,methods,grid_sizes,xlim,ylim,xlabel,ylabel,errorlin
                 lines.append(line)
     ax.set_xlim(xlim)
     ax.set_ylim(ylim)
+    if ylogscale:
+        ax.set_yscale('log')
     ax.set_xlabel(xlabel)
     ax.set_ylabel(ylabel)
     ax.legend()
@@ -183,13 +222,15 @@ def batch_set_error_data(lines,df_list,maxtime,loadvars=[0],maxlevel=0,withgloba
    
     i_line = 0 
     for df, idx in zip(error_df_list_flattened, idx_list):
-        for level in range(maxlevel+1):
-            for var in loadvars:
-                lines[i_line].set_data(df["time"].values[:idx],df[f"error_var_{var}_level_{level}"].values[:idx]) 
-                i_line += 1
+        if maxlevel >= 0:
+            for level in range(maxlevel+1):
+                for var in loadvars:
+                    lines[i_line].set_data(df["time"].values[:idx],df[f"error_var_{var}_level_{level}"].values[:idx]) 
+                    i_line += 1
         if withglobal:
-            lines[i_line].set_data(df["time"].values[:idx],df[f"error_var_{var}_global"].values[:idx]) 
-            i_line += 1
+            for var in loadvars:
+                lines[i_line].set_data(df["time"].values[:idx],df[f"error_var_{var}_global"].values[:idx]) 
+                i_line += 1
 
 def batch_plot_ray(ax,root_dir,case_dir,methods,grid_sizes,i,ray_start,ray_end,ylim=[-0.2,1.4],use_ray_coord=True,variable="temperature",**kwargs):
     """
@@ -210,7 +251,7 @@ def batch_plot_error(ax,filename,root_dir,case_dir,methods,grid_sizes,maxtime,xl
 
     """
     error_df_list = batch_load_error(filename,root_dir,case_dir,methods,grid_sizes,loadvars=loadvars,withglobal=withglobal,**kwargs)
-    lines = setup_batch_line_plot(ax,methods,grid_sizes,xlim,ylim,"time","error",errorlines=True,maxlevel=maxlevel,withglobal=withglobal,**kwargs)
+    lines = setup_batch_line_plot(ax,methods,grid_sizes,xlim,ylim,"time","L2 error",errorlines=True,maxlevel=maxlevel,withglobal=withglobal,**kwargs)
     batch_set_error_data(lines,error_df_list,maxtime,loadvars=loadvars,maxlevel=maxlevel,withglobal=withglobal,**kwargs)
     
 

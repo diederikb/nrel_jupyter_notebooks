@@ -181,8 +181,8 @@ def setup_batch_line_plot(ax,methods,grid_sizes,xlim,ylim,xlabel,ylabel,errorlin
     ax.legend()
     return lines
 
-def setup_slice_plot(fig,ax,ds,fieldtype,variable,zlim,logscale=False,size=10,buff_size=[1000,1000],fontsize=12):
-    slp = yt.SlicePlot(ds, "z", (fieldtype,variable), fontsize=fontsize, origin='native', buff_size=buff_size)
+def setup_slice_plot(fig,ax,ds,fieldtype,variable,zlim,logscale=False,size=10,buff_size=[1000,1000],fontsize=12,annotate_ray=False,ray_start=(0,0,0),ray_end=(1,0,0),center=(0.5,0,0),width=(1,'cm')):
+    slp = yt.SlicePlot(ds, "z", (fieldtype,variable), fontsize=fontsize, origin='native', buff_size=buff_size, center=center, width=width)
     slp.set_log((fieldtype,variable), logscale)
     slp.set_xlabel('x')
     slp.set_ylabel('y')
@@ -191,6 +191,8 @@ def setup_slice_plot(fig,ax,ds,fieldtype,variable,zlim,logscale=False,size=10,bu
     slp.set_figure_size(size)
     slp.plots[(fieldtype,variable)].figure = fig
     slp.plots[(fieldtype,variable)].axes = ax
+    if annotate_ray:
+        slp.annotate_line(ray_start, ray_end, coord_system="data",plot_args={'color':'red'})
     slp._setup_plots()
     return slp
 
